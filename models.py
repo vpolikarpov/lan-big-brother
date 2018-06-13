@@ -1,25 +1,28 @@
 from peewee import *
 
-db = SqliteDatabase('people.db')
+db = SqliteDatabase('lan.db')
 
 
-class Person(Model):
+class BaseModel(Model):
+    class Meta:
+        database = db
+
+
+class Person(BaseModel):
     name = CharField()
 
-    class Meta:
-        database = db
 
-
-class Device(Model):
-    mac_addr = TextField(null=True, primary_key=True)
+class Device(BaseModel):
+    mac_addr = TextField(unique=True, primary_key=False)
     name = TextField(null=True)
-    owner = ForeignKeyField(Person, backref='devices')
+    owner = ForeignKeyField(Person, null=True)
 
-    class Meta:
-        database = db
+    def __str__(self):
+        return '%s [%s]' % (self.name, self.mac_addr)
 
 
-class ScanResult(Model):
+class ScanResult(BaseModel):
     time = DateTimeField()
+    device = ForeignKeyField(Device, null=True)
     mac_addr = TextField()
     ip_addr = TextField()
