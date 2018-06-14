@@ -9,6 +9,8 @@ from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton
 import threading
 from models import Person, Device, ScanResult, JOIN_LEFT_OUTER
 
+from bot import TelegramBot
+
 
 last_scan = None
 
@@ -76,30 +78,6 @@ def cmd_get_conn_devices(chat_id, _):
     bot.sendMessage(chat_id, msg_text, parse_mode='HTML')
 
 
-def on_chat_message(msg):
-    content_type, chat_type, chat_id = telepot.glance(msg)
-
-    if chat_id != ADMIN_CHAT:
-        bot.sendMessage(chat_id, "Ошибка доступа")
-        return
-
-    commands = {
-        '/start': cmd_start,
-        'Устройства': cmd_get_conn_devices,
-    }
-
-    if content_type == 'text':
-        text = msg['text']
-
-        cmd_args = text.split(" ")
-        cmd_name = cmd_args.pop(0)
-
-        func = commands.get(cmd_name)
-
-        if func:
-            func(chat_id, cmd_args)
-
-
 if __name__ == "__main__":
 
     with open(os.path.join(os.path.dirname(__file__), 'lanwatcher.yml')) as f:
@@ -111,6 +89,8 @@ if __name__ == "__main__":
         SUBNET = settings["subnet"]
 
     start_scan()
+
+    bot = TelegramBot()
 
     bot = telepot.Bot(TOKEN)
     MessageLoop(bot, {'chat': on_chat_message}).run_as_thread()
