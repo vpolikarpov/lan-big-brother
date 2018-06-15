@@ -79,7 +79,7 @@ class BotMainState(BotState):
                 if r.device:
                     d = r.device
                     msg_text += "<code>%s</code>: %s (%s) \n" % (
-                        format_datetime(d.time),
+                        format_datetime(r.time),
                         d.owner.name if d.owner else "<b>Кто-то</b>",
                         d.name or "<b>N/A</b>"
                     )
