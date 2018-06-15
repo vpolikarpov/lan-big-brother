@@ -13,7 +13,8 @@ from scanner import lan_scanner
 
 def format_datetime(dt):
     now = datetime.now()
-    if now.year == dt.year:
+    interval = now - dt
+    if interval.days < 180:
         return dt.strftime("%d %b, %H:%M")
     else:
         return dt.strftime("%d %b %Y")
@@ -64,10 +65,11 @@ class BotMainState(BotState):
 
     def get_last_devices(self, _):
         all_results = ScanResult\
-            .select(fn.Max(ScanResult.time), ScanResult.mac_addr)\
+            .select()\
             .join(Device, JOIN_LEFT_OUTER)\
             .group_by(ScanResult.mac_addr)\
-            .order_by(ScanResult.time.desc())
+            .having(fn.Max(ScanResult.time) == ScanResult.time)\
+            .order_by(-ScanResult.time)
 
         anon_results = []
 
@@ -78,7 +80,7 @@ class BotMainState(BotState):
             for r in all_results:
                 if r.device:
                     d = r.device
-                    msg_text += "<code>%s</code>: %s (%s) \n" % (
+                    msg_text += "%s: %s (%s) \n" % (
                         format_datetime(r.time),
                         d.owner.name if d.owner else "<b>Кто-то</b>",
                         d.name or "<b>N/A</b>"
