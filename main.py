@@ -1,81 +1,98 @@
 #!/usr/bin/python3
 
-from datetime import datetime
-from scapy.all import *
+import os
 import yaml
-import telepot
-from telepot.loop import MessageLoop
+from datetime import datetime
+
 from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton
-import threading
-from models import Person, Device, ScanResult, JOIN_LEFT_OUTER
 
-from bot import TelegramBot
-
-
-last_scan = None
+from bot import TelegramBot, BotState
+from models import Device, ScanResult, JOIN_LEFT_OUTER, fn
+from scanner import lan_scanner
 
 
-def arp_scan(iface, ips):
-    conf.verb = 0
-
-    ans, _ = srp(Ether(dst="ff:ff:ff:ff:ff:ff")/ARP(pdst=ips), timeout=2, iface=iface, inter=0.1)
-
-    global last_scan
-    last_scan = timestamp = datetime.now()
-
-    for snd, rcv in ans:
-        mac_addr = rcv.sprintf("%Ether.src%")
-        ip_addr = rcv.sprintf("%ARP.psrc%")
-
-        try:
-            device = Device.get(Device.mac_addr == mac_addr)
-        except Device.DoesNotExist:
-            device = None
-
-        ScanResult(time=timestamp, device=device, mac_addr=mac_addr, ip_addr=ip_addr).save()
+def format_datetime(dt):
+    now = datetime.now()
+    if now.year == dt.year:
+        return dt.strftime("%d %b, %H:%M")
+    else:
+        return dt.strftime("%d %b %Y")
 
 
-def start_scan():
-    threading.Timer(INTERVAL, start_scan).start()
+class BotMainState(BotState):
+    def __init__(self, tg_bot, chat_id):
+        super().__init__(tg_bot, chat_id)
 
-    arp_scan(INTERFACE, SUBNET)
+        self.patterns = {
+            '/start': "start",
+            'Кто сейчас': "get_conn_devices",
+            'Кто когда': "get_last_devices",
+        }
 
+    def start(self, _):
+        self.bot.sendMessage(self.chat_id, "Работаем",
+                             reply_markup=ReplyKeyboardMarkup(keyboard=[
+                                 [
+                                     KeyboardButton(text="Кто сейчас"),
+                                     KeyboardButton(text="Кто когда"),
+                                 ]
+                             ], resize_keyboard=True)
+                             )
 
-########################
+    def get_conn_devices(self, _):
+        all_results = ScanResult.filter(ScanResult.time == lan_scanner.last_scan).join(Device, JOIN_LEFT_OUTER)
+        anon_results = []
 
+        msg_text = "Результаты на %s\n" % lan_scanner.last_scan.strftime("%Y.%m.%d %X")
 
-def cmd_start(chat_id, _):
-    bot.sendMessage(chat_id, "Работаем",
-                    reply_markup=ReplyKeyboardMarkup(keyboard=[
-                        [
-                            KeyboardButton(text="Устройства")
-                        ]
-                    ], resize_keyboard=True)
+        if len(all_results) > 0:
+            msg_text += "\nПользователи:\n"
+            for r in all_results:
+                if r.device:
+                    d = r.device
+                    msg_text += "%s: %s\n" % (d.owner.name if d.owner else "<b>Кто-то</b>", d.name or "<b>N/A</b>")
+                else:
+                    anon_results.append(r)
+
+        if len(anon_results) > 0:
+            msg_text += "\nНеизвестные устройства:\n<code>"
+            for r in anon_results:
+                msg_text += "%s %s\n" % (r.mac_addr, r.ip_addr)
+            msg_text += "</code>"
+
+        self.bot.sendMessage(self.chat_id, msg_text, parse_mode='HTML')
+
+    def get_last_devices(self, _):
+        all_results = ScanResult\
+            .select(fn.Max(ScanResult.time), ScanResult.mac_addr)\
+            .join(Device, JOIN_LEFT_OUTER)\
+            .group_by(ScanResult.mac_addr)\
+            .order_by(ScanResult.time.desc())
+
+        anon_results = []
+
+        msg_text = "Результаты на %s\n" % lan_scanner.last_scan.strftime("%Y.%m.%d %X")
+
+        if len(all_results) > 0:
+            msg_text += "\nПользователи:\n"
+            for r in all_results:
+                if r.device:
+                    d = r.device
+                    msg_text += "<code>%s</code>: %s (%s) \n" % (
+                        format_datetime(d.time),
+                        d.owner.name if d.owner else "<b>Кто-то</b>",
+                        d.name or "<b>N/A</b>"
                     )
+                else:
+                    anon_results.append(r)
 
+        if len(anon_results) > 0:
+            msg_text += "\nНеизвестные устройства:\n<code>"
+            for r in anon_results:
+                msg_text += "%s - %s\n" % (format_datetime(r.time), r.mac_addr)
+            msg_text += "</code>"
 
-def cmd_get_conn_devices(chat_id, _):
-    all_results = ScanResult.filter(ScanResult.time == last_scan).join(Device, JOIN_LEFT_OUTER)
-    anon_results = []
-
-    msg_text = "Результаты на %s\n" % last_scan.strftime("%H:%M:%S")
-
-    if len(all_results) > 0:
-        msg_text += "\nПользователи:\n"
-        for r in all_results:
-            if r.device:
-                d = r.device
-                msg_text += "%s: %s\n" % (d.owner.name if d.owner else "<b>Кто-то</b>", d.name or "<b>N/A</b>")
-            else:
-                anon_results.append(r)
-
-    if len(anon_results) > 0:
-        msg_text += "\nНеизвестные устройства:\n<code>"
-        for r in anon_results:
-            msg_text += "%s %s\n" % (r.mac_addr, r.ip_addr)
-        msg_text += "</code>"
-
-    bot.sendMessage(chat_id, msg_text, parse_mode='HTML')
+        self.bot.sendMessage(self.chat_id, msg_text, parse_mode='HTML')
 
 
 if __name__ == "__main__":
@@ -88,11 +105,9 @@ if __name__ == "__main__":
         INTERFACE = settings["interface"]
         SUBNET = settings["subnet"]
 
-    start_scan()
+    lan_scanner.start_scan(INTERVAL, INTERFACE, SUBNET)
+    print("Scan started")
 
-    bot = TelegramBot()
-
-    bot = telepot.Bot(TOKEN)
-    MessageLoop(bot, {'chat': on_chat_message}).run_as_thread()
-
-    print("Started")
+    bot = TelegramBot(TOKEN, BotMainState)
+    bot.allow_chat(ADMIN_CHAT)
+    print("Bot started")
