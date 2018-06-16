@@ -171,7 +171,9 @@ class BotAddDeviceState(BotState):
         else:
             try:
                 owner = Person.get(Person.name == text)
-                Device(mac_addr=self.mac_addr, name=self.name, owner=owner).save()
+                dev = Device(mac_addr=self.mac_addr, name=self.name, owner=owner)
+                dev.save()
+                ScanResult.update(device=dev).where(ScanResult.mac_addr == self.mac_addr).execute()
                 self.chat.reply(
                     "Device registered",
                     new_state=BotMainState,
