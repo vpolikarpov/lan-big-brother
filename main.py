@@ -1,13 +1,12 @@
 #!/usr/bin/python3
 
 import os
-import yaml
+import yaml, re
 from datetime import datetime
 
-from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton
-
 from bot import TelegramBot, BotState
-from models import Device, ScanResult, JOIN_LEFT_OUTER, fn
+from models import Person, Device, ScanResult
+from peewee import fn, JOIN
 from scanner import lan_scanner
 
 
@@ -20,28 +19,37 @@ def format_datetime(dt):
         return dt.strftime("%d %b %Y")
 
 
-class BotMainState(BotState):
-    def __init__(self, tg_bot, chat_id):
-        super().__init__(tg_bot, chat_id)
+CMD_CANCEL = "Cancel"
+CMD_WHO_NOW = "Who"
+CMD_HISTORY = "Last"
+CMD_ADD_PERSON = "Add person"
+CMD_ADD_DEVICE = "Add device"
 
-        self.patterns = {
-            '/start': "start",
-            'Кто сейчас': "get_conn_devices",
-            'Кто когда': "get_last_devices",
+
+class BotMainState(BotState):
+
+    commands = {
+        '/start': "start",
+    }
+
+    buttons = [
+        {
+            CMD_WHO_NOW: "get_conn_devices",
+            CMD_HISTORY: "get_last_devices",
+        },
+        {
+            CMD_ADD_PERSON: "add_person",
+            CMD_ADD_DEVICE: "add_device",
         }
+    ]
 
     def start(self, _):
-        self.bot.sendMessage(self.chat_id, "Работаем",
-                             reply_markup=ReplyKeyboardMarkup(keyboard=[
-                                 [
-                                     KeyboardButton(text="Кто сейчас"),
-                                     KeyboardButton(text="Кто когда"),
-                                 ]
-                             ], resize_keyboard=True)
-                             )
+        self.chat.reply("Работаем", new_state=BotMainState)
 
-    def get_conn_devices(self, _):
-        all_results = ScanResult.filter(ScanResult.time == lan_scanner.last_scan).join(Device, JOIN_LEFT_OUTER)
+    def get_conn_devices(self):
+        all_results = ScanResult\
+            .filter(ScanResult.time == lan_scanner.last_scan)\
+            .join(Device, JOIN.LEFT_OUTER)
         anon_results = []
 
         msg_text = "Результаты на %s\n" % lan_scanner.last_scan.strftime("%Y.%m.%d %X")
@@ -61,12 +69,15 @@ class BotMainState(BotState):
                 msg_text += "%s %s\n" % (r.mac_addr, r.ip_addr)
             msg_text += "</code>"
 
-        self.bot.sendMessage(self.chat_id, msg_text, parse_mode='HTML')
+        self.chat.reply(
+            msg_text,
+            parse_mode='HTML',
+        )
 
-    def get_last_devices(self, _):
+    def get_last_devices(self):
         all_results = ScanResult\
             .select()\
-            .join(Device, JOIN_LEFT_OUTER)\
+            .join(Device, JOIN.LEFT_OUTER)\
             .group_by(ScanResult.mac_addr)\
             .having(fn.Max(ScanResult.time) == ScanResult.time)\
             .order_by(-ScanResult.time)
@@ -94,7 +105,77 @@ class BotMainState(BotState):
                 msg_text += "%s - %s\n" % (format_datetime(r.time), r.mac_addr)
             msg_text += "</code>"
 
-        self.bot.sendMessage(self.chat_id, msg_text, parse_mode='HTML')
+        self.chat.reply(
+            msg_text,
+            parse_mode='HTML',
+        )
+
+    def add_person(self):
+        self.chat.reply(
+            "User registration.\nPlease, enter user name:",
+            new_state=BotAddPersonState,
+        )
+
+    def add_device(self):
+        self.chat.reply(
+            "Device registration.\nPlease, enter MAC address:",
+            new_state=BotAddDeviceState,
+        )
+
+
+class BotAddPersonState(BotState):
+
+    buttons = [{CMD_CANCEL: "cancel"}]
+
+    def default(self, text):
+        Person(name=text).save()
+        self.chat.reply(
+            "Person registered",
+            new_state=BotMainState,
+        )
+
+    def cancel(self):
+        self.chat.reply(
+            "Registration canceled",
+            new_state=BotMainState,
+        )
+
+
+class BotAddDeviceState(BotState):
+    buttons = [{CMD_CANCEL: "cancel"}]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mac_addr = None
+        self.name = None
+
+    def default(self, text):
+        if self.mac_addr is None:
+            match = re.fullmatch('([0-9a-f]{2}:){6}', text + ":")
+            if match:
+                self.mac_addr = text
+                self.chat.reply("Enter the device name:")
+            else:
+                self.chat.reply("It's not a MAC address. Try again:")
+        elif self.name is None:
+            self.name = text
+            self.chat.reply("Enter owner's name:")
+        else:
+            try:
+                owner = Person.get(Person.name == text)
+                Device(mac_addr=self.mac_addr, name=self.name, owner=owner).save()
+                self.chat.reply(
+                    "Device registered",
+                    new_state=BotMainState,
+                )
+            except Person.DoesNotExist:
+                self.chat.reply("Person not found. Try again:")
+
+    def cancel(self):
+        self.chat.reply(
+            "Registration canceled",
+            new_state=BotMainState,
+        )
 
 
 if __name__ == "__main__":
@@ -107,9 +188,9 @@ if __name__ == "__main__":
         INTERFACE = settings["interface"]
         SUBNET = settings["subnet"]
 
-    lan_scanner.start_scan(INTERVAL, INTERFACE, SUBNET)
-    print("Scan started")
-
     bot = TelegramBot(TOKEN, BotMainState)
     bot.allow_chat(ADMIN_CHAT)
     print("Bot started")
+
+    lan_scanner.start_scan(INTERVAL, INTERFACE, SUBNET)
+    print("Scan started")
