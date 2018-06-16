@@ -47,6 +47,10 @@ class BotMainState(BotState):
         self.chat.reply("Работаем", new_state=BotMainState)
 
     def get_conn_devices(self):
+        if lan_scanner.last_scan is None:
+            self.chat.reply("Scanner is not started yet")
+            return
+
         all_results = ScanResult\
             .filter(ScanResult.time == lan_scanner.last_scan)\
             .join(Device, JOIN.LEFT_OUTER)
@@ -75,6 +79,10 @@ class BotMainState(BotState):
         )
 
     def get_last_devices(self):
+        if lan_scanner.last_scan is None:
+            self.chat.reply("Scanner is not started yet")
+            return
+
         all_results = ScanResult\
             .select()\
             .join(Device, JOIN.LEFT_OUTER)\
