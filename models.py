@@ -26,3 +26,7 @@ class ScanResult(BaseModel):
     device = ForeignKeyField(Device, null=True)
     mac_addr = TextField()
     ip_addr = TextField()
+
+
+def create_tables():
+    return db.create_tables([Person, Device, ScanResult])
