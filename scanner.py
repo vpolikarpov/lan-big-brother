@@ -11,7 +11,7 @@ class LanScanner:
     def arp_scan(self, interface, ips):
         conf.verb = 0
 
-        ans, _ = srp(Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=ips), timeout=2, iface=interface, inter=0.1)
+        ans, _ = srp(Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=ips), timeout=10, iface=interface, inter=0.1)
 
         self.last_scan = timestamp = datetime.now()
 
