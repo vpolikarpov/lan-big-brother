@@ -3,6 +3,8 @@
 import os
 import yaml, re
 from datetime import datetime
+from itertools import groupby
+
 
 from bot import TelegramBot, BotState
 from models import Person, Device, ScanResult
@@ -12,8 +14,12 @@ from scanner import lan_scanner
 
 def format_datetime(dt):
     now = datetime.now()
-    interval = now - dt
-    if interval.days < 180:
+    interval = (now.date() - dt.date()).days
+    if interval < 1:
+        return dt.strftime("%H:%M")
+    elif interval < 7:
+        return dt.strftime("%a, %H:%M")
+    elif interval < 180:
         return dt.strftime("%d %b, %H:%M")
     else:
         return dt.strftime("%d %b %Y")
@@ -80,38 +86,42 @@ class BotMainState(BotState):
 
     def get_last_devices(self):
         if lan_scanner.last_scan is None:
-            self.chat.reply("Scanner is not started yet")
+            self.chat.reply("Сканер не запущен")
             return
 
-        all_results = ScanResult\
+        results = ScanResult\
             .select()\
             .join(Device, JOIN.LEFT_OUTER)\
             .group_by(ScanResult.mac_addr)\
             .having(fn.Max(ScanResult.time) == ScanResult.time)\
             .order_by(-ScanResult.time)
 
-        anon_results = []
+        now = datetime.now()
+        for r in results:
+            interval = (now.date() - r.time.date()).days
+            if interval >= 7:
+                r.interval_readable = "Long time ago"
+            elif interval >= 2:
+                r.interval_readable = "Last week"
+            elif interval >= 1:
+                r.interval_readable = "Yesterday"
+            else:
+                r.interval_readable = "Today"
 
-        msg_text = "Результаты на %s\n" % lan_scanner.last_scan.strftime("%Y.%m.%d %X")
+        msg_text = "Список устройств по времени\nРезультаты на %s\n" % lan_scanner.last_scan.strftime("%Y.%m.%d %X")
 
-        if len(all_results) > 0:
-            msg_text += "\nПользователи:\n"
-            for r in all_results:
+        for k, g in groupby(results, lambda x: x.interval_readable):
+            msg_text += "\n<b>%s</b>\n" % k
+            for r in g:
                 if r.device:
                     d = r.device
                     msg_text += "%s: %s (%s) \n" % (
                         format_datetime(r.time),
-                        d.owner.name if d.owner else "<b>Кто-то</b>",
+                        d.owner.name if d.owner else "<b>N/A</b>",
                         d.name or "<b>N/A</b>"
                     )
                 else:
-                    anon_results.append(r)
-
-        if len(anon_results) > 0:
-            msg_text += "\nНеизвестные устройства:\n<code>"
-            for r in anon_results:
-                msg_text += "%s - %s\n" % (format_datetime(r.time), r.mac_addr)
-            msg_text += "</code>"
+                    msg_text += "%s: <code>%s</code>\n" % (format_datetime(r.time), r.mac_addr)
 
         self.chat.reply(
             msg_text,
