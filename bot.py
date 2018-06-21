@@ -120,3 +120,9 @@ class TelegramBot:
 
         chat = self.chats[chat_id]
         chat.message(msg)
+
+    def alert_all(self, text, parse_mode=None, disable_web_page_preview=None,
+                  disable_notification=None, reply_to_message_id=None, reply_markup=None):
+        for chat_id in self.allowed_chats:
+            self.bot.sendMessage(chat_id, text, parse_mode, disable_web_page_preview,
+                                 disable_notification, reply_to_message_id, reply_markup)

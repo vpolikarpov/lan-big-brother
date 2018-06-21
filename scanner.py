@@ -36,7 +36,7 @@ class LanScanner:
             if mac_addr not in self.known_devices:
                 self.known_devices.append(mac_addr)
                 if self.new_device_alert is not None:
-                    self.new_device_alert()
+                    self.new_device_alert(mac_addr)
 
     def cycle_scan(self):
         Timer(self.scan_interval, self.cycle_scan).start()

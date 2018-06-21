@@ -201,6 +201,10 @@ class BotAddDeviceState(BotState):
         )
 
 
+def new_device_alert(mac_addr):
+    bot.alert_all("New device has been connected.\nMAC address: <code>%s</code>" % mac_addr, parse_mode='HTML')
+
+
 if __name__ == "__main__":
 
     with open(os.path.join(os.path.dirname(__file__), 'lanwatcher.yml')) as f:
@@ -212,6 +216,7 @@ if __name__ == "__main__":
         SUBNET = settings["subnet"]
 
     lan_scanner = LanScanner(INTERVAL, INTERFACE, SUBNET)
+    lan_scanner.set_new_device_alert(new_device_alert)
 
     bot = TelegramBot(TOKEN, BotMainState)
     bot.allow_chat(ADMIN_CHAT)
