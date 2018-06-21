@@ -1,4 +1,4 @@
-import threading
+from threading import Timer
 from models import Device, ScanResult
 from scapy.all import *
 from datetime import datetime
@@ -11,7 +11,7 @@ class LanScanner:
     def arp_scan(self, interface, ips):
         conf.verb = 0
 
-        ans, _ = srp(Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=ips), timeout=10, iface=interface, inter=0.1)
+        ans, _ = srp(Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=ips), timeout=10, iface=interface, retry=3)
 
         self.last_scan = timestamp = datetime.now()
 
@@ -27,7 +27,7 @@ class LanScanner:
             ScanResult(time=timestamp, device=device, mac_addr=mac_addr, ip_addr=ip_addr).save()
 
     def start_scan(self, interval, interface, subnet):
-        threading.Timer(interval, self.start_scan, [interval, interface, subnet]).start()
+        Timer(interval, self.start_scan, [interval, interface, subnet]).start()
 
         self.arp_scan(interface, subnet)
 
