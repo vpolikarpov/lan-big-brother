@@ -10,7 +10,7 @@ from itertools import groupby
 from bot import TelegramBot, BotState
 from models import Person, Device, ScanResult
 from peewee import fn, JOIN
-from scanner import lan_scanner
+from scanner import LanScanner
 
 
 def format_datetime(dt):
@@ -211,9 +211,11 @@ if __name__ == "__main__":
         INTERFACE = settings["interface"]
         SUBNET = settings["subnet"]
 
+    lan_scanner = LanScanner(INTERVAL, INTERFACE, SUBNET)
+
     bot = TelegramBot(TOKEN, BotMainState)
     bot.allow_chat(ADMIN_CHAT)
     print("Bot started")
 
-    lan_scanner.start_scan(INTERVAL, INTERFACE, SUBNET)
+    lan_scanner.start_scan()
     print("Scan started")
