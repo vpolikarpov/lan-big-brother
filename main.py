@@ -1,7 +1,8 @@
 #!/usr/bin/python3
 
 import os
-import yaml, re
+import re
+import yaml
 from datetime import datetime
 from itertools import groupby
 
@@ -50,7 +51,7 @@ class BotMainState(BotState):
     ]
 
     def start(self, _):
-        self.chat.reply("Работаем", new_state=BotMainState)
+        self.chat.reply("It works", new_state=BotMainState)
 
     def get_conn_devices(self):
         if lan_scanner.last_scan is None:
@@ -62,19 +63,19 @@ class BotMainState(BotState):
             .join(Device, JOIN.LEFT_OUTER)
         anon_results = []
 
-        msg_text = "Результаты на %s\n" % lan_scanner.last_scan.strftime("%Y.%m.%d %X")
+        msg_text = "Connected devices as of %s\n" % lan_scanner.last_scan.strftime("%Y.%m.%d %X")
 
         if len(all_results) > 0:
-            msg_text += "\nПользователи:\n"
+            msg_text += "\nKnown devices:\n"
             for r in all_results:
                 if r.device:
                     d = r.device
-                    msg_text += "%s: %s\n" % (d.owner.name if d.owner else "<b>Кто-то</b>", d.name or "<b>N/A</b>")
+                    msg_text += "%s: %s\n" % (d.owner.name if d.owner else "<b>N/A</b>", d.name or "<b>N/A</b>")
                 else:
                     anon_results.append(r)
 
         if len(anon_results) > 0:
-            msg_text += "\nНеизвестные устройства:\n<code>"
+            msg_text += "\nUnknown devices:\n<code>"
             for r in anon_results:
                 msg_text += "%s %s\n" % (r.mac_addr, r.ip_addr)
             msg_text += "</code>"
@@ -86,7 +87,7 @@ class BotMainState(BotState):
 
     def get_last_devices(self):
         if lan_scanner.last_scan is None:
-            self.chat.reply("Сканер не запущен")
+            self.chat.reply("Scanner is not started yet")
             return
 
         results = ScanResult\
@@ -108,7 +109,7 @@ class BotMainState(BotState):
             else:
                 r.interval_readable = "Today"
 
-        msg_text = "Список устройств по времени\nРезультаты на %s\n" % lan_scanner.last_scan.strftime("%Y.%m.%d %X")
+        msg_text = "Recent active devices list\nAs of %s\n" % lan_scanner.last_scan.strftime("%Y.%m.%d %X")
 
         for k, g in groupby(results, lambda x: x.interval_readable):
             msg_text += "\n<b>%s</b>\n" % k
@@ -117,8 +118,8 @@ class BotMainState(BotState):
                     d = r.device
                     msg_text += "%s: %s (%s) \n" % (
                         format_datetime(r.time),
-                        d.owner.name if d.owner else "<b>N/A</b>",
-                        d.name or "<b>N/A</b>"
+                        d.owner.name if d.owner else "N/A",
+                        d.name or "N/A"
                     )
                 else:
                     msg_text += "%s: <code>%s</code>\n" % (format_datetime(r.time), r.mac_addr)
@@ -130,13 +131,14 @@ class BotMainState(BotState):
 
     def add_person(self):
         self.chat.reply(
-            "User registration.\nPlease, enter user name:",
+            "User registration.\nPlease, send me the name.",
             new_state=BotAddPersonState,
         )
 
     def add_device(self):
         self.chat.reply(
-            "Device registration.\nPlease, enter MAC address:",
+            "Device registration.\nPlease, send me the MAC address. It's recommended to enclose it in grave accents "
+            "(`) to prevent emoji appearance.",
             new_state=BotAddDeviceState,
         )
 
@@ -169,15 +171,16 @@ class BotAddDeviceState(BotState):
 
     def default(self, text):
         if self.mac_addr is None:
-            match = re.fullmatch('([0-9a-f]{2}:){6}', text + ":")
+            match = re.fullmatch('([0-9a-fA-F]{2}[:-]){6}', text + ":")
             if match:
-                self.mac_addr = text
-                self.chat.reply("Enter the device name:")
+                self.mac_addr = text.lower().replace("-", ":")
+                self.chat.reply("Ok, now enter the device name.")
             else:
-                self.chat.reply("It's not a MAC address. Try again:")
+                self.chat.reply("It's not a valid MAC address. Valid MAC address consists of six 8-bit hex numbers "
+                                "joined with colons or hyphens.")
         elif self.name is None:
             self.name = text
-            self.chat.reply("Enter owner's name:")
+            self.chat.reply("Finally, enter person's name, who owns this device.")
         else:
             try:
                 owner = Person.get(Person.name == text)
@@ -189,7 +192,7 @@ class BotAddDeviceState(BotState):
                     new_state=BotMainState,
                 )
             except Person.DoesNotExist:
-                self.chat.reply("Person not found. Try again:")
+                self.chat.reply("I don't know anybody with such name. Try again.")
 
     def cancel(self):
         self.chat.reply(
