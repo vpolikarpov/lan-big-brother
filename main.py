@@ -7,7 +7,7 @@ from datetime import datetime
 from itertools import groupby
 
 
-from bot import TelegramBot, BotState
+from bot import TelegramBot, BotState, KeyboardMarkup
 from models import Person, Device, ScanResult
 from peewee import fn, JOIN
 from scanner import LanScanner
@@ -31,6 +31,7 @@ CMD_WHO_NOW = "Who"
 CMD_HISTORY = "Last"
 CMD_ADD_PERSON = "Add person"
 CMD_ADD_DEVICE = "Add device"
+CMD_REGISTER = "➕ Register"
 
 
 class BotMainState(BotState):
@@ -174,10 +175,10 @@ class BotAddDeviceState(BotState):
             match = re.fullmatch('([0-9a-fA-F]{2}[:-]){6}', text + ":")
             if match:
                 self.mac_addr = text.lower().replace("-", ":")
-                self.chat.reply("Ok, now enter the device name.")
+                self.chat.reply("Ok, now enter device name.")
             else:
-                self.chat.reply("It's not a valid MAC address. Valid MAC address consists of six 8-bit hex numbers "
-                                "joined with colons or hyphens.")
+                self.chat.reply("It's not a valid MAC address. Valid MAC address consists of six 8-bit "
+                                "hexadecimal numbers joined with colons or hyphens.")
         elif self.name is None:
             self.name = text
             self.chat.reply("Finally, enter person's name, who owns this device.")
@@ -201,8 +202,35 @@ class BotAddDeviceState(BotState):
         )
 
 
+class NewDeviceAlertMarkup(KeyboardMarkup):
+    buttons = [{
+        CMD_REGISTER: "register",
+    }]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mac_addr = None
+
+    def register(self, _):
+        # TODO: Prevent multi registration
+        # msg_pointer = (query['message']['chat']['id'], query['message']['message_id'])
+
+        self.chat.reply(
+            "Device registration\nEnter device name",
+            new_state=BotAddDeviceState,
+            state_kwargs={"mac_addr": self.mac_addr}
+        )
+
+
 def new_device_alert(mac_addr):
-    bot.alert_all("New device has been connected.\nMAC address: <code>%s</code>" % mac_addr, parse_mode='HTML')
+    markup = NewDeviceAlertMarkup()
+    markup.mac_addr = mac_addr
+
+    bot.inline_all(
+        "New device has been connected.\nMAC address: <code>%s</code>" % mac_addr,
+        parse_mode='HTML',
+        markup=markup,  # TODO: Тут лажа: в несколько чатов пихаем один инстанс
+    )
 
 
 if __name__ == "__main__":

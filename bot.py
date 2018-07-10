@@ -1,7 +1,7 @@
 import re
 import telepot
 from telepot.loop import MessageLoop
-from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton
+from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 
 class BotState:
@@ -22,12 +22,26 @@ class BotState:
         pass
 
 
+class KeyboardMarkup:
+
+    buttons = []
+
+    def __init__(self, chat):
+        self.chat = chat
+
+        self.buttons_dict = {}
+        for row in self.buttons:
+            for label in row:
+                self.buttons_dict[label] = row[label]
+
+
 class ChatFSM:
     def __init__(self, bot, chat_id):
         self.bot = bot
         self.chat_id = chat_id
         self.state = None
         self.storage = {}
+        self.keyboards = {}
 
     def set_state(self, state):
         self.state = state(self)
@@ -68,6 +82,13 @@ class ChatFSM:
             if not matched:
                 state.default(text)
 
+    def query(self, query):
+        data = query['data']
+        keyboard = self.keyboards[query['message']['message_id']]
+        action_name = keyboard.buttons_dict.get(data)
+        action = getattr(keyboard, action_name)
+        action()
+
     def reply(self, text, new_state=None, parse_mode=None, disable_web_page_preview=None,
               disable_notification=None, reply_to_message_id=None, reply_markup=None):
 
@@ -93,13 +114,40 @@ class ChatFSM:
         if new_state is not None:
             self.state = new_state(self)
 
+    def inline(self, text, markup=None, parse_mode=None, disable_web_page_preview=None,
+               disable_notification=None, reply_to_message_id=None, reply_markup=None):
+
+        if markup is not None and markup.buttons is not None:
+            if reply_markup is not None:
+                raise Exception("Reply markup is already set. Unable to change state.")
+
+            keyboard = []
+            for row in markup.buttons:
+                kb_row = []
+                for label in row:
+                    kb_row.append(InlineKeyboardButton(
+                        text=label,
+                        callback_data=label,
+                    ))
+                keyboard.append(kb_row)
+
+            reply_markup = InlineKeyboardMarkup(
+                inline_keyboard=keyboard,
+            )
+
+        reply = self.bot.sendMessage(self.chat_id, text, parse_mode, disable_web_page_preview,
+                                     disable_notification, reply_to_message_id, reply_markup)
+
+        if markup is not None and markup.buttons is not None:
+            self.keyboards[reply['message_id']] = markup
+
 
 class TelegramBot:
     def __init__(self, token, initial_state):
         self.allowed_chats = []
 
         self.bot = telepot.Bot(token)
-        MessageLoop(self.bot, {'chat': self.on_chat_message}).run_as_thread()
+        MessageLoop(self.bot, {'chat': self.on_chat_message, 'callback_query': self.on_callback_query}).run_as_thread()
 
         self.initial_state = initial_state
         self.chats = {}
@@ -121,8 +169,27 @@ class TelegramBot:
         chat = self.chats[chat_id]
         chat.message(msg)
 
-    def alert_all(self, text, parse_mode=None, disable_web_page_preview=None,
+    def on_callback_query(self, query):
+        chat_id = query['message']['chat']['id']
+
+        if chat_id not in self.allowed_chats:
+            self.bot.sendMessage(chat_id, "Ошибка доступа")
+            return
+
+        if chat_id not in self.chats:
+            return
+
+        chat = self.chats[chat_id]
+        chat.query(query)
+
+    def alert_all(self, text, new_state=None, parse_mode=None, disable_web_page_preview=None,
                   disable_notification=None, reply_to_message_id=None, reply_markup=None):
-        for chat_id in self.allowed_chats:
-            self.bot.sendMessage(chat_id, text, parse_mode, disable_web_page_preview,
-                                 disable_notification, reply_to_message_id, reply_markup)
+        for chat_id in self.chats:
+            self.chats[chat_id].reply(text, new_state, parse_mode, disable_web_page_preview,
+                                      disable_notification, reply_to_message_id, reply_markup)
+
+    def inline_all(self, text, markup=None, parse_mode=None, disable_web_page_preview=None,
+                   disable_notification=None, reply_to_message_id=None, reply_markup=None):
+        for chat_id in self.chats:
+            self.chats[chat_id].inline(text, markup, parse_mode, disable_web_page_preview,
+                                       disable_notification, reply_to_message_id, reply_markup)
