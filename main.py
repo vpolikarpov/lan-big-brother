@@ -6,8 +6,9 @@ import yaml
 from datetime import datetime
 from itertools import groupby
 
-
+from telepot.namedtuple import InlineQueryResultArticle
 from bot import TelegramBot, BotState, KeyboardMarkup
+
 from models import Person, Device, ScanResult
 from peewee import fn, JOIN
 from scanner import LanScanner
@@ -32,6 +33,7 @@ CMD_HISTORY = "Last"
 CMD_ADD_PERSON = "Add person"
 CMD_ADD_DEVICE = "Add device"
 CMD_REGISTER = "➕ Register"
+CMD_SEARCH = "🔍 Search"
 
 
 class BotMainState(BotState):
@@ -181,7 +183,10 @@ class BotAddDeviceState(BotState):
                                 "hexadecimal numbers joined with colons or hyphens.")
         elif self.name is None:
             self.name = text
-            self.chat.reply("Finally, enter person's name, who owns this device.")
+            self.chat.inline(
+                "Finally, enter person's name, who owns this device.",
+                markup=SearchMarkup,
+            )
         else:
             try:
                 owner = Person.get(Person.name == text)
@@ -200,6 +205,21 @@ class BotAddDeviceState(BotState):
             "Registration canceled",
             new_state=BotMainState,
         )
+
+    def inline_query(self, query):
+        data = query['query']
+        results = []
+        if self.mac_addr is not None and self.name is not None:
+            users = Person.select().where(Person.name.contains(data))
+
+            for user in users:
+                results.append(InlineQueryResultArticle(
+                    id=user.name,
+                    title=user.name,
+                    input_message_content={"message_text": user.name},
+                ))
+
+        return results
 
 
 class NewDeviceAlertMarkup(KeyboardMarkup):
@@ -221,6 +241,12 @@ class NewDeviceAlertMarkup(KeyboardMarkup):
             setup={"mac_addr": self.mac_addr},
             reply_to_message_id=msg_id,
         )
+
+
+class SearchMarkup(KeyboardMarkup):
+    buttons = [{
+        CMD_SEARCH: {"switch_inline_query_current_chat": ""},
+    }]
 
 
 def new_device_alert(mac_addr):

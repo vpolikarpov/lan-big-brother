@@ -1,7 +1,7 @@
 import re
 import telepot
 from telepot.loop import MessageLoop
-from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultArticle
 
 
 def build_keyboard(buttons, inline=False):
@@ -10,9 +10,13 @@ def build_keyboard(buttons, inline=False):
     for row in buttons:
         kb_row = []
         for label in row:
+            ar = row[label].copy() if isinstance(row[label], dict) else {"callback": row[label]}
+            ar["text"] = label
+            if "callback" in ar:
+                ar["callback_data"] = label
+                ar.pop("callback")
             kb_row.append(button_cls(
-                text=label,
-                callback_data=label,
+                **ar,
             ))
         keyboard.append(kb_row)
 
@@ -33,6 +37,10 @@ class BotState:
     commands = {}
     patterns = {}
 
+    inline_query_kwargs = {
+        "is_personal": True,
+    }
+
     def __init__(self, chat):
         self.chat = chat
 
@@ -42,6 +50,9 @@ class BotState:
                 self.buttons_dict[label] = row[label]
 
     def default(self, text):
+        pass
+
+    def inline_query(self, query):
         pass
 
 
@@ -108,9 +119,19 @@ class ChatFSM:
     def query(self, query):
         data = query['data']
         keyboard = self.keyboards[query['message']['message_id']]
-        action_name = keyboard.buttons_dict.get(data)
+        action_setup = keyboard.buttons_dict.get(data)
+
+        if isinstance(action_setup, dict):
+            action_name = action_setup["callback"]
+        else:
+            action_name = action_setup
+
         action = getattr(keyboard, action_name)
         action(query)
+
+    def inline_query(self, query):
+        results = self.state.inline_query(query)
+        self.bot.answerInlineQuery(query['id'], results, **self.state.inline_query_kwargs)
 
     def reply(self, text, new_state=None, setup=None, parse_mode=None, disable_web_page_preview=None,
               disable_notification=None, reply_to_message_id=None, reply_markup=None):
@@ -176,7 +197,12 @@ class TelegramBot:
         self.allowed_chats = []
 
         self.bot = telepot.Bot(token)
-        MessageLoop(self.bot, {'chat': self.on_chat_message, 'callback_query': self.on_callback_query}).run_as_thread()
+        MessageLoop(self.bot, {
+            'chat': self.on_chat_message,
+            'callback_query': self.on_callback_query,
+            'inline_query': self.on_inline_query,
+            'chosen_inline_result': self.on_chosen_inline_result,
+        }).run_as_thread()
 
         self.initial_state = initial_state
         self.chats = {}
@@ -199,22 +225,26 @@ class TelegramBot:
             self.bot.sendMessage(chat_id, "Ошибка доступа")
             return
 
-        if chat_id not in self.chats:
-            self.chats[chat_id] = chat = ChatFSM(self.bot, chat_id)
-            chat.set_state(self.initial_state)
-
-        chat = self.chats[chat_id]
+        chat = self.get_or_create_chat(chat_id)
         chat.message(msg)
 
     def on_callback_query(self, query):
         chat_id = query['message']['chat']['id']
 
         if chat_id not in self.allowed_chats:
-            self.bot.sendMessage(chat_id, "Ошибка доступа")
             return
 
-        if chat_id not in self.chats:
-            return
-
-        chat = self.chats[chat_id]
+        chat = self.get_or_create_chat(chat_id)
         chat.query(query)
+
+    def on_inline_query(self, query):
+        chat_id = query['from']['id']
+
+        if chat_id not in self.allowed_chats:
+            return
+
+        chat = self.get_or_create_chat(chat_id)
+        chat.inline_query(query)
+
+    def on_chosen_inline_result(self, query):
+        print(">> " + query['query'])
