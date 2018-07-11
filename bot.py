@@ -4,6 +4,29 @@ from telepot.loop import MessageLoop
 from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 
+def build_keyboard(buttons, inline=False):
+    button_cls = InlineKeyboardButton if inline else KeyboardButton
+    keyboard = []
+    for row in buttons:
+        kb_row = []
+        for label in row:
+            kb_row.append(button_cls(
+                text=label,
+                callback_data=label,
+            ))
+        keyboard.append(kb_row)
+
+    if inline:
+        return InlineKeyboardMarkup(
+            inline_keyboard=keyboard,
+        )
+    else:
+        return ReplyKeyboardMarkup(
+            keyboard=keyboard,
+            resize_keyboard=True,
+        )
+
+
 class BotState:
 
     buttons = []
@@ -87,59 +110,65 @@ class ChatFSM:
         keyboard = self.keyboards[query['message']['message_id']]
         action_name = keyboard.buttons_dict.get(data)
         action = getattr(keyboard, action_name)
-        action()
+        action(query)
 
-    def reply(self, text, new_state=None, parse_mode=None, disable_web_page_preview=None,
+    def reply(self, text, new_state=None, setup=None, parse_mode=None, disable_web_page_preview=None,
               disable_notification=None, reply_to_message_id=None, reply_markup=None):
 
         if new_state is not None and new_state.buttons is not None:
             if reply_markup is not None:
                 raise Exception("Reply markup is already set. Unable to change state.")
 
-            keyboard = []
-            for row in new_state.buttons:
-                kb_row = []
-                for label in row:
-                    kb_row.append(KeyboardButton(text=label))
-                keyboard.append(kb_row)
-
-            reply_markup = ReplyKeyboardMarkup(
-                keyboard=keyboard,
-                resize_keyboard=True,
-            )
+            reply_markup = build_keyboard(new_state.buttons)
 
         self.bot.sendMessage(self.chat_id, text, parse_mode, disable_web_page_preview,
                              disable_notification, reply_to_message_id, reply_markup)
 
         if new_state is not None:
-            self.state = new_state(self)
+            self.state = s = new_state(self)
+            if setup is not None:
+                for field in setup:
+                    setattr(s, field, setup[field])
 
-    def inline(self, text, markup=None, parse_mode=None, disable_web_page_preview=None,
+    def inline(self, text, markup=None, setup=None, parse_mode=None, disable_web_page_preview=None,
                disable_notification=None, reply_to_message_id=None, reply_markup=None):
 
         if markup is not None and markup.buttons is not None:
             if reply_markup is not None:
-                raise Exception("Reply markup is already set. Unable to change state.")
-
-            keyboard = []
-            for row in markup.buttons:
-                kb_row = []
-                for label in row:
-                    kb_row.append(InlineKeyboardButton(
-                        text=label,
-                        callback_data=label,
-                    ))
-                keyboard.append(kb_row)
-
-            reply_markup = InlineKeyboardMarkup(
-                inline_keyboard=keyboard,
-            )
+                raise Exception("Reply markup is already set. Unable to init inline keyboard.")
+            reply_markup = build_keyboard(markup.buttons, inline=True)
 
         reply = self.bot.sendMessage(self.chat_id, text, parse_mode, disable_web_page_preview,
                                      disable_notification, reply_to_message_id, reply_markup)
 
         if markup is not None and markup.buttons is not None:
-            self.keyboards[reply['message_id']] = markup
+            self.keyboards[reply['message_id']] = m = markup(self)
+            if setup is not None:
+                for field in setup:
+                    setattr(m, field, setup[field])
+
+    def edit(self, message_id, text=None, markup=None, setup=None, parse_mode=None,
+             disable_web_page_preview=None, reply_markup=None):
+        msg_pointer = (self.chat_id, message_id)
+
+        if markup is None and reply_markup is None:
+            markup = self.keyboards.get(message_id, None)
+
+        if markup is not None and markup.buttons is not None:
+            if reply_markup is not None:
+                raise Exception("Reply markup is already set. Unable to init inline keyboard.")
+            reply_markup = build_keyboard(markup.buttons, inline=True)
+
+        if text is not None:
+            self.bot.editMessageText(msg_pointer, text, parse_mode, disable_web_page_preview, reply_markup)
+        else:
+            self.bot.editMessageReplyMarkup(msg_pointer, reply_markup)
+
+        if markup is not None and markup.buttons is not None:
+            self.keyboards[message_id] = m = markup(self)
+            if setup is not None:
+                for field in setup:
+                    setattr(m, field, setup[field])
 
 
 class TelegramBot:
@@ -154,6 +183,14 @@ class TelegramBot:
 
     def allow_chat(self, chat_id):
         self.allowed_chats.append(chat_id)
+
+    def get_or_create_chat(self, chat_id):
+        if chat_id not in self.chats:
+            self.chats[chat_id] = chat = ChatFSM(self.bot, chat_id)
+            chat.set_state(self.initial_state)
+            return chat
+        else:
+            return self.chats[chat_id]
 
     def on_chat_message(self, msg):
         content_type, chat_type, chat_id = telepot.glance(msg)
@@ -181,15 +218,3 @@ class TelegramBot:
 
         chat = self.chats[chat_id]
         chat.query(query)
-
-    def alert_all(self, text, new_state=None, parse_mode=None, disable_web_page_preview=None,
-                  disable_notification=None, reply_to_message_id=None, reply_markup=None):
-        for chat_id in self.chats:
-            self.chats[chat_id].reply(text, new_state, parse_mode, disable_web_page_preview,
-                                      disable_notification, reply_to_message_id, reply_markup)
-
-    def inline_all(self, text, markup=None, parse_mode=None, disable_web_page_preview=None,
-                   disable_notification=None, reply_to_message_id=None, reply_markup=None):
-        for chat_id in self.chats:
-            self.chats[chat_id].inline(text, markup, parse_mode, disable_web_page_preview,
-                                       disable_notification, reply_to_message_id, reply_markup)

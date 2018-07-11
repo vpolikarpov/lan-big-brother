@@ -211,25 +211,25 @@ class NewDeviceAlertMarkup(KeyboardMarkup):
         super().__init__(*args, **kwargs)
         self.mac_addr = None
 
-    def register(self, _):
-        # TODO: Prevent multi registration
-        # msg_pointer = (query['message']['chat']['id'], query['message']['message_id'])
+    def register(self, query):
+        msg_id = query['message']['message_id']
+        self.chat.edit(msg_id, markup=KeyboardMarkup)
 
         self.chat.reply(
             "Device registration\nEnter device name",
             new_state=BotAddDeviceState,
-            state_kwargs={"mac_addr": self.mac_addr}
+            setup={"mac_addr": self.mac_addr},
+            reply_to_message_id=msg_id,
         )
 
 
 def new_device_alert(mac_addr):
-    markup = NewDeviceAlertMarkup()
-    markup.mac_addr = mac_addr
-
-    bot.inline_all(
+    admin_chat = bot.get_or_create_chat(ADMIN_CHAT)
+    admin_chat.inline(
         "New device has been connected.\nMAC address: <code>%s</code>" % mac_addr,
         parse_mode='HTML',
-        markup=markup,  # TODO: Тут лажа: в несколько чатов пихаем один инстанс
+        markup=NewDeviceAlertMarkup,
+        setup={"mac_addr": mac_addr},
     )
 
 
