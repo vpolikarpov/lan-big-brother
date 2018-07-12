@@ -1,7 +1,7 @@
 import re
 import telepot
 from telepot.loop import MessageLoop
-from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultArticle
+from telepot.namedtuple import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 
 def build_keyboard(buttons, inline=False):
@@ -56,7 +56,7 @@ class BotState:
         pass
 
 
-class KeyboardMarkup:
+class InlineKeyboard:
 
     buttons = []
 

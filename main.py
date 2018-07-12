@@ -7,7 +7,7 @@ from datetime import datetime
 from itertools import groupby
 
 from telepot.namedtuple import InlineQueryResultArticle
-from bot import TelegramBot, BotState, KeyboardMarkup
+from bot import TelegramBot, BotState, InlineKeyboard
 
 from models import Person, Device, ScanResult
 from peewee import fn, JOIN
@@ -134,15 +134,23 @@ class BotMainState(BotState):
 
     def add_person(self):
         self.chat.reply(
-            "User registration.\nPlease, send me the name.",
+            "User registration.\n"
+            "Please, enter the name.",
             new_state=BotAddPersonState,
         )
 
     def add_device(self):
         self.chat.reply(
-            "Device registration.\nPlease, send me the MAC address. It's recommended to enclose it in grave accents "
-            "(`) to prevent emoji appearance.",
+            "Device registration (step 1/3).\n\n"
+            "Please, send me the MAC address of the device you're registering.\n"
+            "It's recommended to enclose it in grave accents (`) to prevent substitution of the text with emoji.",
             new_state=BotAddDeviceState,
+        )
+
+    def default(self, text):
+        self.chat.reply(
+            "Please, use one of the commands from the keyboard below.",
+            new_state=type(self),
         )
 
 
@@ -153,13 +161,13 @@ class BotAddPersonState(BotState):
     def default(self, text):
         Person(name=text).save()
         self.chat.reply(
-            "Person registered",
+            "Person has saved",
             new_state=BotMainState,
         )
 
     def cancel(self):
         self.chat.reply(
-            "Registration canceled",
+            "Person registration canceled",
             new_state=BotMainState,
         )
 
@@ -177,15 +185,21 @@ class BotAddDeviceState(BotState):
             match = re.fullmatch('([0-9a-fA-F]{2}[:-]){6}', text + ":")
             if match:
                 self.mac_addr = text.lower().replace("-", ":")
-                self.chat.reply("Ok, now enter device name.")
+                self.chat.reply("Device registration (step 2/3).\n"
+                                "MAC address: %s\n"
+                                "\n"
+                                "Please, name this device." % self.mac_addr)
             else:
-                self.chat.reply("It's not a valid MAC address. Valid MAC address consists of six 8-bit "
+                self.chat.reply("It's not a valid MAC address. A valid MAC address consists of six 8-bit "
                                 "hexadecimal numbers joined with colons or hyphens.")
         elif self.name is None:
             self.name = text
             self.chat.inline(
-                "Finally, enter person's name, who owns this device.",
-                markup=SearchMarkup,
+                "Device registration (step 3/3).\n"
+                "MAC address: %s\n"
+                "Name: %s\n\n"
+                "Finally, enter the name of the device owner.",
+                markup=SearchKeyboard,
             )
         else:
             try:
@@ -194,15 +208,18 @@ class BotAddDeviceState(BotState):
                 dev.save()
                 ScanResult.update(device=dev).where(ScanResult.mac_addr == self.mac_addr).execute()
                 self.chat.reply(
-                    "Device registered",
+                    "Device has saved",
                     new_state=BotMainState,
                 )
             except Person.DoesNotExist:
-                self.chat.reply("I don't know anybody with such name. Try again.")
+                self.chat.reply(
+                    "I don't know anybody with such name. Please, try again or use search.",
+                    markup=SearchKeyboard,
+                )
 
     def cancel(self):
         self.chat.reply(
-            "Registration canceled",
+            "Device registration canceled",
             new_state=BotMainState,
         )
 
@@ -222,7 +239,7 @@ class BotAddDeviceState(BotState):
         return results
 
 
-class NewDeviceAlertMarkup(KeyboardMarkup):
+class NewDeviceAlertKeyboard(InlineKeyboard):
     buttons = [{
         CMD_REGISTER: "register",
     }]
@@ -233,17 +250,17 @@ class NewDeviceAlertMarkup(KeyboardMarkup):
 
     def register(self, query):
         msg_id = query['message']['message_id']
-        self.chat.edit(msg_id, markup=KeyboardMarkup)
+        self.chat.edit(msg_id, markup=InlineKeyboard)
 
         self.chat.reply(
-            "Device registration\nEnter device name",
+            "Device registration\nPlease, enter device name",
             new_state=BotAddDeviceState,
             setup={"mac_addr": self.mac_addr},
             reply_to_message_id=msg_id,
         )
 
 
-class SearchMarkup(KeyboardMarkup):
+class SearchKeyboard(InlineKeyboard):
     buttons = [{
         CMD_SEARCH: {"switch_inline_query_current_chat": ""},
     }]
@@ -252,9 +269,9 @@ class SearchMarkup(KeyboardMarkup):
 def new_device_alert(mac_addr):
     admin_chat = bot.get_or_create_chat(ADMIN_CHAT)
     admin_chat.inline(
-        "New device has been connected.\nMAC address: <code>%s</code>" % mac_addr,
+        "New device has been detected!\nMAC address: <code>%s</code>" % mac_addr,
         parse_mode='HTML',
-        markup=NewDeviceAlertMarkup,
+        markup=NewDeviceAlertKeyboard,
         setup={"mac_addr": mac_addr},
     )
 
@@ -277,4 +294,4 @@ if __name__ == "__main__":
     print("Bot started")
 
     lan_scanner.start_scan()
-    print("Scan started")
+    print("Scanner started")
