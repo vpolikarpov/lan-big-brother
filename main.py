@@ -3,7 +3,7 @@
 import os
 import re
 import yaml
-from datetime import datetime
+from datetime import datetime, timedelta
 from itertools import groupby
 
 from telepot.namedtuple import InlineQueryResultArticle
@@ -28,8 +28,9 @@ def format_datetime(dt):
 
 
 CMD_CANCEL = "Cancel"
-CMD_WHO_NOW = "Who"
-CMD_HISTORY = "Last"
+CMD_WHO_NOW = "Current"
+CMD_LAST1H = "Last hour"
+CMD_HISTORY = "Full history"
 CMD_ADD_PERSON = "Add person"
 CMD_ADD_DEVICE = "Add device"
 CMD_REGISTER = "➕ Register"
@@ -45,7 +46,8 @@ class BotMainState(BotState):
     buttons = [
         {
             CMD_WHO_NOW: "get_conn_devices",
-            CMD_HISTORY: "get_last_devices",
+            CMD_LAST1H: "get_last1h_devices",
+            CMD_HISTORY: "get_recent_devices_activity",
         },
         {
             CMD_ADD_PERSON: "add_person",
@@ -88,17 +90,49 @@ class BotMainState(BotState):
             parse_mode='HTML',
         )
 
-    def get_last_devices(self):
+    def get_last1h_devices(self):
         if lan_scanner.last_scan is None:
-            self.chat.reply("Scanner is not started yet")
-            return
+            self.chat.reply("⚠️ Scanner is not started yet")
+
+        now = datetime.now()
+
+        results = ScanResult\
+            .select()\
+            .where(ScanResult.time > now - timedelta(hours=1))\
+            .join(Device, JOIN.LEFT_OUTER)\
+            .group_by(ScanResult.mac_addr)\
+            .having(fn.Max(ScanResult.time) == ScanResult.time)\
+            .order_by(-ScanResult.time, -Device.owner)
+
+        msg_text = "Active in last hour devices list\nAs of %s\n" % now.strftime("%Y.%m.%d %X")
+
+        for k, g in groupby(results, lambda x: x.time):
+            msg_text += "\n<b>%s</b>\n" % format_datetime(k)
+            for r in g:
+                if r.device:
+                    d = r.device
+                    msg_text += "• %s (%s) \n" % (
+                        d.owner.name if d.owner else "N/A",
+                        d.name or "N/A"
+                    )
+                else:
+                    msg_text += "• <code>%s</code>\n" % r.mac_addr
+
+        self.chat.reply(
+            msg_text,
+            parse_mode='HTML',
+        )
+
+    def get_recent_devices_activity(self):
+        if lan_scanner.last_scan is None:
+            self.chat.reply("⚠️ Scanner is not started yet")
 
         results = ScanResult\
             .select()\
             .join(Device, JOIN.LEFT_OUTER)\
             .group_by(ScanResult.mac_addr)\
             .having(fn.Max(ScanResult.time) == ScanResult.time)\
-            .order_by(-ScanResult.time)
+            .order_by(-ScanResult.time, -Device.owner)
 
         now = datetime.now()
         for r in results:
@@ -112,7 +146,7 @@ class BotMainState(BotState):
             else:
                 r.interval_readable = "Today"
 
-        msg_text = "Recent active devices list\nAs of %s\n" % lan_scanner.last_scan.strftime("%Y.%m.%d %X")
+        msg_text = "Recent active devices list\nAs of %s\n" % now.strftime("%Y.%m.%d %X")
 
         for k, g in groupby(results, lambda x: x.interval_readable):
             msg_text += "\n<b>%s</b>\n" % k
