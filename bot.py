@@ -10,11 +10,14 @@ def build_keyboard(buttons, inline=False):
     for row in buttons:
         kb_row = []
         for label in row:
-            ar = row[label].copy() if isinstance(row[label], dict) else {"callback": row[label]}
-            ar["text"] = label
-            if "callback" in ar:
+            btn = row[label] if isinstance(row[label], tuple) else ("callback", str(row[label]))
+
+            ar = {"text": label}
+            if btn[0] == "callback":
                 ar["callback_data"] = label
-                ar.pop("callback")
+            else:
+                ar[btn[0]] = btn[1]
+
             kb_row.append(button_cls(
                 **ar,
             ))
@@ -121,10 +124,10 @@ class ChatFSM:
         keyboard = self.keyboards[query['message']['message_id']]
         action_setup = keyboard.buttons_dict.get(data)
 
-        if isinstance(action_setup, dict):
-            action_name = action_setup["callback"]
+        if isinstance(action_setup, tuple) and action_setup[0] == "callback":
+            action_name = action_setup[1]
         else:
-            action_name = action_setup
+            action_name = str(action_setup)
 
         action = getattr(keyboard, action_name)
         action(query)

@@ -161,7 +161,7 @@ class BotAddPersonState(BotState):
     def default(self, text):
         Person(name=text).save()
         self.chat.reply(
-            "Person has saved",
+            "Person has been saved",
             new_state=BotMainState,
         )
 
@@ -198,7 +198,7 @@ class BotAddDeviceState(BotState):
                 "Device registration (step 3/3).\n"
                 "MAC address: %s\n"
                 "Name: %s\n\n"
-                "Finally, enter the name of the device owner.",
+                "Finally, enter the name of the device owner." % (self.mac_addr, self.name),
                 markup=SearchKeyboard,
             )
         else:
@@ -208,7 +208,7 @@ class BotAddDeviceState(BotState):
                 dev.save()
                 ScanResult.update(device=dev).where(ScanResult.mac_addr == self.mac_addr).execute()
                 self.chat.reply(
-                    "Device has saved",
+                    "Device has been saved",
                     new_state=BotMainState,
                 )
             except Person.DoesNotExist:
@@ -224,9 +224,10 @@ class BotAddDeviceState(BotState):
         )
 
     def inline_query(self, query):
-        data = query['query']
+        data = query['query'].lstrip()
         results = []
         if self.mac_addr is not None and self.name is not None:
+            print("\"%s\"" % data)
             users = Person.select().where(Person.name.contains(data))
 
             for user in users:
@@ -241,7 +242,7 @@ class BotAddDeviceState(BotState):
 
 class NewDeviceAlertKeyboard(InlineKeyboard):
     buttons = [{
-        CMD_REGISTER: "register",
+        CMD_REGISTER: ("callback", "register"),
     }]
 
     def __init__(self, *args, **kwargs):
@@ -250,19 +251,33 @@ class NewDeviceAlertKeyboard(InlineKeyboard):
 
     def register(self, query):
         msg_id = query['message']['message_id']
-        self.chat.edit(msg_id, markup=InlineKeyboard)
+
+        try:
+            device = Device.get(Device.mac_addr == self.mac_addr)
+            self.chat.reply(
+                "This device is registered already\n"
+                "MAC address: %s\n"
+                "Name: %s\n"
+                "Owner: %s" % (device.mac_addr, device.name, device.owner.name)
+            )
+            self.chat.edit(msg_id, markup=InlineKeyboard)
+            return
+        except Device.DoesNotExist:
+            pass
 
         self.chat.reply(
-            "Device registration\nPlease, enter device name",
+            "Device registration (step 2/3).\n"
+            "MAC address: %s\n"
+            "\n"
+            "Please, name this device." % self.mac_addr,
             new_state=BotAddDeviceState,
             setup={"mac_addr": self.mac_addr},
-            reply_to_message_id=msg_id,
         )
 
 
 class SearchKeyboard(InlineKeyboard):
     buttons = [{
-        CMD_SEARCH: {"switch_inline_query_current_chat": ""},
+        CMD_SEARCH: ("switch_inline_query_current_chat", ""),
     }]
 
 
