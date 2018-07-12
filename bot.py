@@ -18,9 +18,7 @@ def build_keyboard(buttons, inline=False):
             else:
                 ar[btn[0]] = btn[1]
 
-            kb_row.append(button_cls(
-                **ar,
-            ))
+            kb_row.append(button_cls(**ar))
         keyboard.append(kb_row)
 
     if inline:
