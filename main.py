@@ -5,6 +5,7 @@ import re
 import yaml
 from datetime import datetime, timedelta
 from itertools import groupby
+from time import sleep
 
 from telepot.namedtuple import InlineQueryResultArticle
 from bot import TelegramBot, BotState, InlineKeyboard
@@ -346,3 +347,6 @@ if __name__ == "__main__":
 
     lan_scanner.start_scan()
     print("Scanner started")
+
+    while True:
+        sleep(300)
