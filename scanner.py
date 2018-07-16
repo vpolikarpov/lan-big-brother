@@ -1,8 +1,11 @@
 from threading import Timer
 from models import Device, ScanResult
-from scapy.all import *
 from datetime import datetime
 from itertools import chain
+
+from scapy.layers.l2 import Ether, ARP
+from scapy.config import conf
+from scapy.sendrecv import srp
 
 
 class LanScanner:
