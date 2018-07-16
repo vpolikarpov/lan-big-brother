@@ -1,4 +1,5 @@
 import threading
+import time
 from models import Device, ScanResult
 from datetime import datetime
 from itertools import chain
@@ -13,7 +14,6 @@ from multiprocessing import Process, Queue
 def arp_scan(queue, subnet, interface):
     conf.verb = 0
     ans, uan = srp(Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=subnet), timeout=10, iface=interface, retry=3)
-    print("Scan done")
 
     for snd, rcv in ans:
         mac_addr = rcv.sprintf("%Ether.src%")
@@ -35,8 +35,14 @@ class LanScanner:
     def arp_scan(self):
         queue = Queue()
         p = Process(target=arp_scan, args=(queue, self.subnet, self.interface))
+        start_time = time.time()
         p.start()
         p.join()
+        end_time = time.time()
+
+        if end_time - start_time > self.scan_interval:
+            print("WARNING: Scan was longer than interval. Sequent scans can overlap and cause CPU overloading.")
+
         self.last_scan = timestamp = datetime.now()
 
         devices = [d for d in Device.select()]
