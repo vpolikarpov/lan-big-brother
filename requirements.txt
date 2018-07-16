@@ -1,0 +1,4 @@
+PyYAML
+scapy
+peewee
+telepot
