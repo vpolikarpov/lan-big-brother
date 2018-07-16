@@ -1,4 +1,4 @@
-from threading import Timer
+import threading
 from models import Device, ScanResult
 from datetime import datetime
 from itertools import chain
@@ -18,21 +18,25 @@ class LanScanner:
         self.interface = interface
         self.subnet = subnet
 
-    def arp_scan(self, interface, ips):
+        self.payload = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=self.subnet)
+
+    def arp_scan(self):
         conf.verb = 0
 
-        ans, _ = srp(Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=ips), timeout=10, iface=interface, retry=3)
-
+        ans, uan = srp(self.payload, timeout=10, iface=self.interface, retry=3)
         self.last_scan = timestamp = datetime.now()
+
+        devices = [d for d in Device.select()]
 
         for snd, rcv in ans:
             mac_addr = rcv.sprintf("%Ether.src%")
             ip_addr = rcv.sprintf("%ARP.psrc%")
 
-            try:
-                device = Device.get(Device.mac_addr == mac_addr)
-            except Device.DoesNotExist:
-                device = None
+            device = None
+            for d in devices:
+                if d.mac_addr == mac_addr:
+                    device = d
+                    break
 
             ScanResult(time=timestamp, device=device, mac_addr=mac_addr, ip_addr=ip_addr).save()
 
@@ -42,8 +46,8 @@ class LanScanner:
                     self.new_device_alert(mac_addr)
 
     def cycle_scan(self):
-        Timer(self.scan_interval, self.cycle_scan).start()
-        self.arp_scan(self.interface, self.subnet)
+        threading.Timer(self.scan_interval, self.cycle_scan).start()
+        self.arp_scan()
 
     def start_scan(self):
         results = ScanResult.select(ScanResult.mac_addr).distinct()
