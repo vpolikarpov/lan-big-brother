@@ -7,6 +7,20 @@ from scapy.layers.l2 import Ether, ARP
 from scapy.config import conf
 from scapy.sendrecv import srp
 
+from multiprocessing import Process, Queue
+
+
+def arp_scan(queue, subnet, interface):
+    conf.verb = 0
+    ans, uan = srp(Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=subnet), timeout=10, iface=interface, retry=3)
+    print("Scan done")
+
+    for snd, rcv in ans:
+        mac_addr = rcv.sprintf("%Ether.src%")
+        ip_addr = rcv.sprintf("%ARP.psrc%")
+
+        queue.put((mac_addr, ip_addr))
+
 
 class LanScanner:
     def __init__(self, interval, interface, subnet):
@@ -18,19 +32,17 @@ class LanScanner:
         self.interface = interface
         self.subnet = subnet
 
-        self.payload = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=self.subnet)
-
     def arp_scan(self):
-        conf.verb = 0
-
-        ans, uan = srp(self.payload, timeout=10, iface=self.interface, retry=3)
+        queue = Queue()
+        p = Process(target=arp_scan, args=(queue, self.subnet, self.interface))
+        p.start()
+        p.join()
         self.last_scan = timestamp = datetime.now()
 
         devices = [d for d in Device.select()]
 
-        for snd, rcv in ans:
-            mac_addr = rcv.sprintf("%Ether.src%")
-            ip_addr = rcv.sprintf("%ARP.psrc%")
+        while not queue.empty():
+            mac_addr, ip_addr = queue.get()
 
             device = None
             for d in devices:
