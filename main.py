@@ -11,7 +11,7 @@ from telepot.namedtuple import InlineQueryResultArticle
 from bot import TelegramBot, BotState, InlineKeyboard
 
 from models import Person, Device, ScanResult
-from peewee import fn, Clause, JOIN, SQL
+from peewee import fn, JOIN, SQL, NodeList
 from scanner import LanScanner
 
 
@@ -104,7 +104,7 @@ class BotMainState(BotState):
             .join(Person, JOIN.LEFT_OUTER)\
             .group_by(ScanResult.mac_addr)\
             .having(fn.Max(ScanResult.time) == ScanResult.time)\
-            .order_by(-ScanResult.time, Clause(Person.name, SQL('IS NULL')), Person.name)
+            .order_by(-ScanResult.time, NodeList((Person.name, SQL('IS NULL'))), Person.name)
 
         msg_text = "Active in the last hour devices list\nAs of %s\n" % now.strftime("%Y.%m.%d %X")
 
