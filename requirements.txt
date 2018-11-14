@@ -1,4 +1,4 @@
 PyYAML
-scapy
-peewee
+scapy==2.4
+peewee>=3.0
 telepot
