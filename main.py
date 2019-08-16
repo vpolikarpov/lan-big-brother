@@ -331,7 +331,7 @@ def new_device_alert(mac_addr):
 if __name__ == "__main__":
 
     with open(os.path.join(os.path.dirname(__file__), 'lanwatcher.yml')) as f:
-        settings = yaml.load(f.read())
+        settings = yaml.safe_load(f.read())
         TOKEN = settings["bot_token"]
         ADMIN_CHAT = settings["admin_chat"]
         INTERVAL = settings["scan_interval"]
