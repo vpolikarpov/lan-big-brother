@@ -3,6 +3,7 @@
 import os
 import re
 import yaml
+import ssl
 from datetime import datetime, timedelta
 from itertools import groupby
 from time import sleep
@@ -12,7 +13,8 @@ from bot import TelegramBot, BotState, InlineKeyboard
 
 from models import Person, Device, ScanResult
 from peewee import fn, JOIN, SQL, NodeList
-from scanner import LanScanner
+from arping_scanner import ARPScanner
+from routeros_scanner import RouterOsScanner
 
 
 def format_datetime(dt):
@@ -60,16 +62,16 @@ class BotMainState(BotState):
         self.chat.reply("It works", new_state=BotMainState)
 
     def get_conn_devices(self):
-        if lan_scanner.last_scan is None:
+        if scanner.last_scan is None:
             self.chat.reply("Scanner is not started yet")
             return
 
         all_results = ScanResult\
-            .filter(ScanResult.time == lan_scanner.last_scan)\
+            .filter(ScanResult.time == scanner.last_scan)\
             .join(Device, JOIN.LEFT_OUTER)
         anon_results = []
 
-        msg_text = "Connected devices as of %s\n" % lan_scanner.last_scan.strftime("%Y.%m.%d %X")
+        msg_text = "Connected devices as of %s\n" % scanner.last_scan.strftime("%Y.%m.%d %X")
 
         if len(all_results) > 0:
             msg_text += "\nKnown devices:\n"
@@ -92,7 +94,7 @@ class BotMainState(BotState):
         )
 
     def get_last1h_devices(self):
-        if lan_scanner.last_scan is None:
+        if scanner.last_scan is None:
             self.chat.reply("⚠️ Scanner is not started yet")
 
         now = datetime.now()
@@ -127,7 +129,7 @@ class BotMainState(BotState):
         )
 
     def get_recent_devices_activity(self):
-        if lan_scanner.last_scan is None:
+        if scanner.last_scan is None:
             self.chat.reply("⚠️ Scanner is not started yet")
 
         results = ScanResult\
@@ -335,17 +337,29 @@ if __name__ == "__main__":
         TOKEN = settings["bot_token"]
         ADMIN_CHAT = settings["admin_chat"]
         INTERVAL = settings["scan_interval"]
-        INTERFACE = settings["interface"]
-        SUBNET = settings["subnet"]
+        SCANNER = settings["scanner"]
 
-    lan_scanner = LanScanner(INTERVAL, INTERFACE, SUBNET)
-    lan_scanner.set_new_device_alert(new_device_alert)
+    scanner_type = SCANNER['type']
+    if scanner_type == "arping":
+        scanner = ARPScanner(INTERVAL, SCANNER["interface"], SCANNER["subnet"])
+    elif scanner_type == "routeros_api":
+        ssl_context = ssl.create_default_context()
+        ssl_context.load_verify_locations(SCANNER["cert_file"])
+        ssl_context.check_hostname = False
+
+        scanner = RouterOsScanner(
+            INTERVAL, SCANNER['address'], SCANNER["username"], SCANNER["password"], ssl_context
+        )
+    else:
+        raise ValueError("Unknown scanner type. Should be one of ['arping', 'routeros_api']")
+
+    scanner.set_new_device_alert(new_device_alert)
 
     bot = TelegramBot(TOKEN, BotMainState)
     bot.allow_chat(ADMIN_CHAT)
     print("Bot started")
 
-    lan_scanner.start_scan()
+    scanner.start_scan()
     print("Scanner started")
 
     while True:
