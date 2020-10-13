@@ -347,8 +347,10 @@ if __name__ == "__main__":
         ssl_context.load_verify_locations(SCANNER["cert_file"])
         ssl_context.check_hostname = False
 
+        subnet_filters = SCANNER.get("subnets", None)
+
         scanner = RouterOsScanner(
-            INTERVAL, SCANNER['address'], SCANNER["username"], SCANNER["password"], ssl_context
+            INTERVAL, SCANNER['address'], SCANNER["username"], SCANNER["password"], ssl_context, subnet_filters
         )
     else:
         raise ValueError("Unknown scanner type. Should be one of ['arping', 'routeros_api']")
