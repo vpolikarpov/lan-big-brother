@@ -31,7 +31,8 @@ class AbstractScanner:
 
         self.cycle_scan()
 
-    def add_scan_result(self, mac_addr, ip_addr, timestamp=None):
+    def add_scan_result(self, mac_addr_raw, ip_addr, timestamp=None):
+        mac_addr = mac_addr_raw.lower().replace("-", ":")
         device = None
         for d in self._registered_devices:
             if d.mac_addr == mac_addr:
