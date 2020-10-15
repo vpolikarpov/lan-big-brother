@@ -51,7 +51,5 @@ class RouterOsScanner(AbstractScanner):
             if self.subnet_filters:
                 addr = ip_address(host['address'])
                 if not any(addr in subnet for subnet in self.subnet_filters):
-                    print('skipping %s' % host['address'])
                     continue
-            print(host)
             self.add_scan_result(host['mac-address'], host['address'], timestamp)
