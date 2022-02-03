@@ -1,5 +1,5 @@
 PyYAML>=6.0
 scapy~=2.4.3
 peewee>=3.0
-telepot
+pyTelegramBotAPI>=4.4.0
 RouterOS-api>=0.17.0

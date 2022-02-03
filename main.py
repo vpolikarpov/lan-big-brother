@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import os
+import sys
 import re
 import yaml
 import ssl
@@ -8,7 +9,7 @@ from datetime import datetime, timedelta
 from itertools import groupby
 from time import sleep
 
-from telepot.namedtuple import InlineQueryResultArticle
+from telebot.types import InlineQueryResultArticle, InputTextMessageContent
 from bot import TelegramBot, BotState, InlineKeyboard
 
 from models import Person, Device, ScanResult
@@ -263,7 +264,7 @@ class BotAddDeviceState(BotState):
         )
 
     def inline_query(self, query):
-        data = query['query'].lstrip()
+        data = query.query.lstrip()
         results = []
         if self.mac_addr is not None and self.name is not None:
             print("\"%s\"" % data)
@@ -273,7 +274,7 @@ class BotAddDeviceState(BotState):
                 results.append(InlineQueryResultArticle(
                     id=user.name,
                     title=user.name,
-                    input_message_content={"message_text": user.name},
+                    input_message_content=InputTextMessageContent(user.name)
                 ))
 
         return results
@@ -289,7 +290,7 @@ class NewDeviceAlertKeyboard(InlineKeyboard):
         self.mac_addr = None
 
     def register(self, query):
-        msg_id = query['message']['message_id']
+        msg_id = query.message.message_id
 
         try:
             device = Device.get(Device.mac_addr == self.mac_addr)
@@ -359,10 +360,23 @@ if __name__ == "__main__":
 
     bot = TelegramBot(TOKEN, BotMainState)
     bot.allow_chat(ADMIN_CHAT)
+
+    print("Starting bot...")
+    bot.start()
     print("Bot started")
 
-    scanner.start_scan()
+    print("Starting scanner...")
+    scanner.start()
     print("Scanner started")
 
-    while True:
-        sleep(300)
+    try:
+        while True:
+            sleep(300)
+    except KeyboardInterrupt as e:
+        print("Interrupted")
+        print("Stop bot")
+        bot.stop()
+        print("Stop scanner")
+        scanner.stop()
+        print("Exit")
+        sys.exit(e)

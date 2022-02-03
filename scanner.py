@@ -13,16 +13,19 @@ class AbstractScanner:
 
         self.scan_interval = interval
 
+        self.timer = None
+
     def scan(self):
         raise NotImplemented
 
     def cycle_scan(self):
-        threading.Timer(self.scan_interval, self.cycle_scan).start()
+        self.timer = threading.Timer(self.scan_interval, self.cycle_scan)
+        self.timer.start()
 
         self._registered_devices = [d for d in Device.select()]
         self.scan()
 
-    def start_scan(self):
+    def start(self):
         results = ScanResult.select(ScanResult.mac_addr).distinct()
         devices = Device.select(Device.mac_addr).distinct()
         for r in chain(results, devices):
@@ -48,3 +51,7 @@ class AbstractScanner:
 
     def set_new_device_alert(self, fn):
         self.new_device_alert = fn
+
+    def stop(self):
+        if self.timer:
+            self.timer.cancel()
