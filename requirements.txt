@@ -1,5 +1,5 @@
-PyYAML>=5.1
-scapy==2.4.3
+PyYAML>=6.0
+scapy~=2.4.3
 peewee>=3.0
 telepot
-RouterOS-api
+RouterOS-api>=0.17.0
